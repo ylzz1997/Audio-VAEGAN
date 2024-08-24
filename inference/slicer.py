@@ -127,12 +127,12 @@ def cut(audio_path, db_thresh=-30, min_len=5000):
 def chunks2audio(audio_path, chunks):
     chunks = dict(chunks)
     audio, sr = torchaudio.load(audio_path)
-    if len(audio.shape) == 2 and audio.shape[1] >= 2:
-        audio = torch.mean(audio, dim=0).unsqueeze(0)
-    audio = audio.cpu().numpy()[0]
+    # if len(audio.shape) == 2 and audio.shape[1] >= 2:
+    #     audio = torch.mean(audio, dim=0).unsqueeze(0)
+    audio = audio.cpu().numpy()
     result = []
     for k, v in chunks.items():
         tag = v["split_time"].split(",")
         if tag[0] != tag[1]:
-            result.append((v["slice"], audio[int(tag[0]):int(tag[1])]))
+            result.append((v["slice"], audio[:, int(tag[0]):int(tag[1])]))
     return result, sr

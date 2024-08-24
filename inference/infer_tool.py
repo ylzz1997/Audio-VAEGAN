@@ -56,8 +56,8 @@ def read_temp(file_name):
 def format_wav(audio_path):
     if Path(audio_path).suffix == '.wav':
         return
-    raw_audio, raw_sample_rate = librosa.load(audio_path, mono=True, sr=None)
-    soundfile.write(Path(audio_path).with_suffix(".wav"), raw_audio, raw_sample_rate)
+    raw_audio, raw_sample_rate = librosa.load(audio_path, mono=False, sr=None)
+    soundfile.write(Path(audio_path).with_suffix(".wav"), raw_audio.T, raw_sample_rate)
 
 def mkdir(paths: list):
     for path in paths:
@@ -65,7 +65,7 @@ def mkdir(paths: list):
             os.mkdir(path)
 
 def pad_array(arr, target_length):
-    current_length = arr.shape[0]
+    current_length = arr.shape[-1]
     if current_length >= target_length:
         return arr
     else:
@@ -77,7 +77,7 @@ def pad_array(arr, target_length):
     
 def split_list_by_n(list_collection, n, pre=0):
     for i in range(0, len(list_collection), n):
-        yield list_collection[i-pre if i-pre>=0 else i: i + n]
+        yield list_collection[:, i-pre if i-pre>=0 else i: i + n]
 
 class Svc(object):
     def __init__(self, net_g_path, config_path,
@@ -157,8 +157,8 @@ class Svc(object):
             for (slice_tag, data) in audio_data:
                 length = int(np.ceil(len(data) / audio_sr * self.target_sample))
                 if slice_tag:
-                    _audio = np.zeros(length)
-                    audio.extend(list(pad_array(_audio, length)))
+                    _audio = np.zeros((data.shape[0], length))
+                    audio.append(pad_array(_audio, length))
                     progress.update(infer_task, advance=1, description=f"length=0s")
                     continue
                 if per_size != 0:
@@ -170,21 +170,24 @@ class Svc(object):
                 for k, dat in enumerate(datas):
                     per_length = int(np.ceil(len(dat) / audio_sr * self.target_sample)) if clip_seconds!=0 else length
                     pad_len = int(audio_sr * pad_seconds)
-                    dat = np.concatenate([np.zeros([pad_len]), dat, np.zeros([pad_len])])
+                    # print(dat.shape, pad_len)
+                    dat = np.concatenate([np.zeros([dat.shape[0], pad_len]), dat, np.zeros([dat.shape[0], pad_len])], axis=-1)
                     raw_path = io.BytesIO()
-                    soundfile.write(raw_path, dat, audio_sr, format="wav")
+                    soundfile.write(raw_path, dat.T, audio_sr, format="wav")
                     raw_path.seek(0)
-                    out_audio = self.infer(raw_path)[0,0,:]
+                    out_audio = self.infer(raw_path)[:,0,:]
                     _audio = out_audio.cpu().numpy()
                     pad_len = int(self.target_sample * pad_seconds)
-                    _audio = _audio[pad_len:-pad_len]
+                    _audio = _audio[:, pad_len:-pad_len]
                     _audio = pad_array(_audio, per_length)
+                    print(_audio.shape)
                     if lg_size!=0 and k!=0:
-                        lg1 = audio[-(lg_size_r+lg_size_c_r):-lg_size_c_r] if lgr_num != 1 else audio[-lg_size:]
-                        lg2 = _audio[lg_size_c_l:lg_size_c_l+lg_size_r]  if lgr_num != 1 else _audio[0:lg_size]
+                        lg1 = audio[:, -(lg_size_r+lg_size_c_r):-lg_size_c_r] if lgr_num != 1 else audio[:, -lg_size:]
+                        lg2 = _audio[:, lg_size_c_l:lg_size_c_l+lg_size_r]  if lgr_num != 1 else _audio[:, 0:lg_size]
                         lg_pre = lg1*(1-lg)+lg2*lg
-                        audio = audio[0:-(lg_size_r+lg_size_c_r)] if lgr_num != 1 else audio[0:-lg_size]
+                        audio = audio[:, 0:-(lg_size_r+lg_size_c_r)] if lgr_num != 1 else audio[:, 0:-lg_size]
                         audio.extend(lg_pre)
-                        _audio = _audio[lg_size_c_l+lg_size_r:] if lgr_num != 1 else _audio[lg_size:]
-                    audio.extend(list(_audio))
+                        _audio = _audio[:, lg_size_c_l+lg_size_r:] if lgr_num != 1 else _audio[:, lg_size:]
+                    audio.append(_audio)
+        audio = np.concatenate(audio, axis=-1)
         return np.array(audio)

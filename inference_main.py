@@ -53,7 +53,7 @@ def main():
     }
     audio = svc_model.slice_inference(**kwarg)
     res_path = f'results/{clean_name}'
-    soundfile.write(res_path, audio, svc_model.target_sample, format="wav")
+    soundfile.write(res_path, audio.T, svc_model.target_sample, format="wav")
     torch.cuda.empty_cache()
             
 if __name__ == '__main__':

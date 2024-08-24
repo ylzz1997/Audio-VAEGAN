@@ -9,7 +9,8 @@ from vector_quantize_pytorch import VectorQuantize
 import modules.modules as modules
 from modules.commons import get_padding, init_weights
 from modules.msstftd import MultiScaleSTFTDiscriminator
-
+from modules.ConformerConv import ConformerConvLayer
+from modules.MRD import MRD
 LRELU_SLOPE = 0.1
 
 class Encoder(nn.Module):
@@ -23,7 +24,7 @@ class Encoder(nn.Module):
         self.out_channels = h["inter_channels"]
         self.num_downsamples = len(h["upsample_rates"])
         self.conv_pre = weight_norm(Conv1d(1, h["upsample_initial_channel"]// (2 ** len(h["upsample_rates"])), 7, 1, padding=3))
-        resblock = ResBlock1 if h["resblock"] == '1' else ResBlock2
+        resblock = ResBlock2
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(reversed(h["upsample_rates"]), reversed(h["upsample_kernel_sizes"]))):
             self.ups.append(weight_norm(
@@ -132,9 +133,11 @@ class DiscriminatorS(torch.nn.Module):
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super(MultiPeriodDiscriminator, self).__init__()
-        periods = [2, 3, 5, 7, 11, 13, 19, 23, 29]
-
-        discs = [MultiScaleSTFTDiscriminator(filters=32) ,DiscriminatorS(use_spectral_norm=use_spectral_norm)]
+        periods = [2, 3, 5, 7, 11, 13, 17]
+        fft_sizes = [2048, 1024, 512]
+        
+        # discs = [MultiScaleSTFTDiscriminator(filters=32) ,]
+        discs = [MRD(f) for f in fft_sizes]
         discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
         self.discriminators = nn.ModuleList(discs)
 
@@ -245,8 +248,9 @@ class Generator(torch.nn.Module):
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
         self.upp = np.prod(h["upsample_rates"])
-
+        self.conv_layers = ConformerConvLayer(h["inter_channels"], 31, 4)
     def forward(self, x):
+        x = self.conv_layers(x)
         x = self.conv_pre(x)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
@@ -408,3 +412,6 @@ class TrainModel(nn.Module):
     def remove_weight_norm(self):
         self.dec.remove_weight_norm()
         self.enc_q.remove_weight_norm()
+        
+if __name__ == "__main__":
+    disc = MultiPeriodDiscriminator()
