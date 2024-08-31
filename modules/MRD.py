@@ -1,11 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-from functools import reduce
-import typing as tp
 from einops import rearrange
-from audiotools import AudioSignal, STFTParams
 from torch.nn.utils import weight_norm
 import torchaudio
 BANDS = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
@@ -40,7 +35,7 @@ class MRD(nn.Module):
             Bands to run discriminator over.
         """
         super().__init__()
-
+        from audiotools import STFTParams
         self.window_length = window_length
         self.hop_factor = hop_factor
         self.sample_rate = sample_rate
@@ -74,6 +69,7 @@ class MRD(nn.Module):
             normalized=True, center=False, pad_mode=None, power=None, return_complex=True)
         
     def spectrogram(self, x):
+        from audiotools import AudioSignal
         x = AudioSignal(x, self.sample_rate, stft_params=self.stft_params)
         x = torch.view_as_real(x.stft())
         # x = torch.view_as_real(self.spec_transform(x))

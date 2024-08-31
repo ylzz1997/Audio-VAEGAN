@@ -3,8 +3,9 @@ import torch
 from torch import nn
 from torch.nn import AvgPool1d, Conv1d, Conv2d, ConvTranspose1d
 from torch.nn import functional as F
-from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
-from vector_quantize_pytorch import VectorQuantize
+from torch.nn.utils.parametrize import remove_parametrizations as remove_weight_norm
+from torch.nn.utils.parametrizations import spectral_norm, weight_norm
+#from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 import modules.modules as modules
 from modules.commons import get_padding, init_weights
@@ -59,15 +60,15 @@ class Encoder(nn.Module):
         m, logs = torch.split(x, self.out_channels, dim=1)
         z = m + torch.randn_like(m) * torch.exp(logs)
         return z, m, logs
-    
+
     def remove_weight_norm(self):
         for l in self.ups:
-            remove_weight_norm(l)
+            remove_weight_norm(l, 'weight')
         for l in self.resblocks:
             l.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
-        remove_weight_norm(self.conv_post)
-        
+        remove_weight_norm(self.conv_pre, 'weight')
+        remove_weight_norm(self.conv_post, 'weight')
+
 class DiscriminatorP(torch.nn.Module):
     def __init__(self, period, kernel_size=5, stride=3, use_spectral_norm=False):
         super(DiscriminatorP, self).__init__()
@@ -84,7 +85,7 @@ class DiscriminatorP(torch.nn.Module):
 
     def forward(self, x):
         fmap = []
-        
+
         # 1d to 2d
         b, c, t = x.shape
         if t % self.period != 0:  # pad first
@@ -135,7 +136,7 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         super(MultiPeriodDiscriminator, self).__init__()
         periods = [2, 3, 5, 7, 11, 13, 17]
         fft_sizes = [2048, 1024, 512]
-        
+
         # discs = [MultiScaleSTFTDiscriminator(filters=32) ,]
         discs = [MRD(f) for f in fft_sizes]
         discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
@@ -197,9 +198,9 @@ class ResBlock1(torch.nn.Module):
 
     def remove_weight_norm(self):
         for l in self.convs1:
-            remove_weight_norm(l)
+            remove_weight_norm(l, 'weight')
         for l in self.convs2:
-            remove_weight_norm(l)
+            remove_weight_norm(l, 'weight')
 
 
 class ResBlock2(torch.nn.Module):
@@ -223,7 +224,7 @@ class ResBlock2(torch.nn.Module):
 
     def remove_weight_norm(self):
         for l in self.convs:
-            remove_weight_norm(l)
+            remove_weight_norm(l, 'weight')
 
 class Generator(torch.nn.Module):
     def __init__(self, h):
@@ -270,11 +271,11 @@ class Generator(torch.nn.Module):
 
     def remove_weight_norm(self):
         for l in self.ups:
-            remove_weight_norm(l)
+            remove_weight_norm(l, 'weight')
         for l in self.resblocks:
             l.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
-        remove_weight_norm(self.conv_post)
+        remove_weight_norm(self.conv_pre, 'weight')
+        remove_weight_norm(self.conv_post, 'weight')
 
 class MultiScaleDiscriminator(torch.nn.Module):
     def __init__(self):
@@ -374,7 +375,7 @@ class TrainModel(nn.Module):
         self.upsample_kernel_sizes = upsample_kernel_sizes
         self.hop_size = hop_size
         self.windows_size = windows_size
-        
+
         hps = {
             "sampling_rate": sampling_rate,
             "inter_channels": inter_channels,
@@ -385,16 +386,17 @@ class TrainModel(nn.Module):
             "upsample_initial_channel": upsample_initial_channel,
             "upsample_kernel_sizes": upsample_kernel_sizes
         }
-        
+
         self.dec = Generator(h=hps)
 
         self.enc_q = Encoder(h=hps)
-        
+
         if use_vq:
+            from vector_quantize_pytorch import VectorQuantize
             self.quantizer = VectorQuantize(
                 dim = inter_channels,
                 codebook_size = codebook_size,
-                decay = 0.8,             
+                decay = 0.8,
                 commitment_weight = 1.)
         else:
             self.quantizer = None
@@ -408,10 +410,10 @@ class TrainModel(nn.Module):
         wav = self.dec(z)
 
         return z, wav, (m, logs), commit_loss
-    
+
     def remove_weight_norm(self):
         self.dec.remove_weight_norm()
         self.enc_q.remove_weight_norm()
-        
+
 if __name__ == "__main__":
     disc = MultiPeriodDiscriminator()
