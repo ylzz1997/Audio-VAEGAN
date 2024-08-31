@@ -81,6 +81,7 @@ if __name__ == "__main__":
     model = model["model"]
     save_model_enc = {}
     save_model_dec = {}
+    save_model = {}
     for k, v in model.items():
         if k[:4] == 'dec.':
             k = k[len(k.split('.')[0]) + 1:]
@@ -88,10 +89,13 @@ if __name__ == "__main__":
         else:
             k = k[len(k.split('.')[0]) + 1:]
             save_model_enc[k] = v
+    save_model["encoder"] = save_model_enc
+    save_model["decoder"] = save_model_dec
     # save inference model
     os.makedirs(args.output, exist_ok=True)
     torch.save(save_model_enc, os.path.join(args.output, "encoder.pth"))
     torch.save(save_model_dec, os.path.join(args.output, "decoder.pth"))
+    torch.save(save_model, os.path.join(args.output, "model.pth"))
     # save config
     with open(os.path.join(args.output, "config.json"), "w", encoding="utf-8") as f:
         json.dump(save_config, f, indent=4)
